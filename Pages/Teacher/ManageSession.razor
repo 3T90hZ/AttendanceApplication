@@ -1,0 +1,21 @@
+﻿@using AttendanceApplication.Data
+@using AttendanceApplication.Models
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+
+@code {
+    [Parameter] public int ClassSessionId { get; set; }
+    private ClassSession session;
+
+    protected override async Task OnInitializedAsync()
+    {
+        session = await Context.ClassSessions.FindAsync(ClassSessionId);
+    }
+
+    private async Task GenerateCode()
+    {
+        var random = new Random();
+        session.CheckInCode = random.Next(100000, 999999).ToString();
+        await Context.SaveChangesAsync();
+    }
+}

@@ -1,0 +1,135 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using AttendanceApplication.Data;
+@using Microsoft.AspNetCore.Identity;
+@using Microsoft.EntityFrameworkCore
+@using System.ComponentModel.DataAnnotations
+@page "/admin/scheduleclass/{ClassId:int}"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApplicationDbContext Context
+@inject NavigationManager Navigation
+
+<h3>Schedule Class</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+@if (newSession == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <EditForm Model="newSession" OnValidSubmit="HandleSchedule">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="form-group">
+            <label>Date and Time</label>
+            <InputDate class="form-control" @bind-Value="newSession.Date" />
+
+        </div>
+        <br/>
+        @* <div class="form-group"> *@
+        @*     <label>Date and Time</label> *@
+        @*     <InputDate class="form-control" @bind-Value="newSession.Time" /> *@
+
+        @* </div> *@
+        <button type="submit" class="btn btn-primary">Schedule</button>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int ClassId { get; set; }
+    private ClassSessionModel newSession;
+    private string errorMessage;
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            newSession = new ClassSessionModel
+            {
+                ClassId = ClassId,
+                Date = DateTime.Today,
+                Time = DateTime.Now.TimeOfDay != TimeSpan.Zero ? DateTime.Now.TimeOfDay : new TimeSpan(9, 0, 0)
+            };
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error initializing component: {ex.Message}";
+            Console.WriteLine($"OnInitialized Exception: {ex}");
+        }
+    }
+
+    private async Task HandleSchedule()
+    {
+        try
+        {
+            var classExists = await Context.Classes.AnyAsync(c => c.Id == ClassId);
+            if (!classExists)
+            {
+                errorMessage = $"Class with ID {ClassId} does not exist.";
+                return;
+            }
+
+            var sessionDateTime = newSession.Date.Date + newSession.Time;
+            var classSession = new ClassSession
+            {
+                ClassId = newSession.ClassId,
+                DateTime = sessionDateTime,
+                CheckInCode = ""
+            };
+
+            Context.ClassSessions.Add(classSession);
+            await Context.SaveChangesAsync();
+
+            var enrollments = await Context.Enrollments
+                .Where(e => e.ClassId == ClassId)
+                .ToListAsync() ?? new List<Enrollment>();
+
+            foreach (var enrollment in enrollments)
+            {
+                var studentExists = await Context.Users.AnyAsync(u => u.Id == enrollment.StudentId);
+                if (!studentExists)
+                {
+                    errorMessage = $"Student with ID {enrollment.StudentId} does not exist.";
+                    return;
+                }
+
+                Context.Attendances.Add(new Attendance
+                {
+                    ClassSessionId = classSession.Id,
+                    StudentId = enrollment.StudentId,
+                    Status = AttendanceStatus.AbsentWithoutPermission
+                });
+            }
+
+            await Context.SaveChangesAsync();
+            Navigation.NavigateTo("/admin/classes");
+        }
+        catch (Exception ex)
+        {
+            var innerMessage = ex.InnerException != null ? $"\nInner Exception: {ex.InnerException.Message}" : "";
+            errorMessage = $"Error scheduling class: {ex.Message}{innerMessage}";
+            Console.WriteLine($"HandleSchedule Exception: {ex}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner Exception: {ex.InnerException}");
+            }
+        }
+    }
+
+    public class ClassSessionModel
+    {
+        public int ClassId { get; set; }
+
+        [Required(ErrorMessage = "Date is required.")]
+        public DateTime Date { get; set; }
+
+        [Required(ErrorMessage = "Time is required.")]
+        public TimeSpan Time { get; set; }
+    }
+}

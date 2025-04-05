@@ -1,0 +1,64 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using AttendanceApplication.Data;
+@using Microsoft.AspNetCore.Identity;
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@page "/teacher/schedule"
+@attribute [Authorize(Roles = "Teacher")]
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Teaching Schedule</h3>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Class Name</th>
+            <th>Date and Time</th>
+            <th>Check-In Code</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if(sessions != null){
+            @foreach (var session in sessions)
+            {
+                <tr>
+                    <td>@session.Class.Name</td>
+                    <td>@session.DateTime.ToString("g")</td>
+                    <td>@session.CheckInCode</td>
+                    <td>
+                        <button class="btn btn-primary" @onclick="() => GenerateCode(session.Id)">Generate Code</button>
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<ClassSession> sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var teacherId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        sessions = await Context.ClassSessions
+            .Include(cs => cs.Class)
+            .Where(cs => cs.Class.TeacherId == teacherId)
+            .ToListAsync();
+    }
+
+    private async Task GenerateCode(int sessionId)
+    {
+        var session = sessions.FirstOrDefault(s => s.Id == sessionId);
+        if (session != null)
+        {
+            var random = new Random();
+            session.CheckInCode = random.Next(100000, 999999).ToString();
+            await Context.SaveChangesAsync();
+            StateHasChanged();
+        }
+    }
+}

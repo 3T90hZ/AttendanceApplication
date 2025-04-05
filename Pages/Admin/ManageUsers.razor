@@ -1,0 +1,88 @@
+﻿@using Microsoft.EntityFrameworkCore
+@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using Microsoft.AspNetCore.Identity;
+@page "/admin/manageusers"
+@attribute [Authorize(Roles = "Admin")]
+@inject UserManagementService UserService
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject NavigationManager Navigation
+
+<h3>Manage Users</h3>
+
+@if (users == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Display Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.DisplayName</td>
+                    <td>@user.Email</td>
+                    <td>@user.Role</td>
+                    <td>
+                        <button class="btn btn-warning" @onclick="() => EditUser(user.Id)">Edit</button>
+                        <button class="btn btn-danger" @onclick="() => DeleteUser(user.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<UserViewModel> users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var allUsers = await UserManager.Users.ToListAsync();
+        users = new List<UserViewModel>();
+        foreach (var user in allUsers)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            users.Add(new UserViewModel
+                {
+                    Id = user.Id,
+                    DisplayName = user.DisplayName,
+                    Email = user.Email,
+                    Role = roles.FirstOrDefault()
+                });
+        }
+    }
+
+    private void EditUser(string userId)
+    {
+        Navigation.NavigateTo($"/admin/edituser/{userId}");
+    }
+
+    private async Task DeleteUser(string userId)
+    {
+        var result = await UserService.DeleteUserAsync(userId);
+        if (result)
+        {
+            users.RemoveAll(u => u.Id == userId);
+            StateHasChanged();
+        }
+    }
+
+    public class UserViewModel
+    {
+        public string Id { get; set; }
+        public string DisplayName { get; set; }
+        public string Email { get; set; }
+        public string Role { get; set; }
+    }
+}

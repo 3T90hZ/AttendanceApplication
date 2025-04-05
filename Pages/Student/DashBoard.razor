@@ -1,0 +1,22 @@
+﻿@page "/student/dashboard"
+@attribute [Authorize(Roles = "Student")]
+@inject NavigationManager Navigation
+
+<h3>Student Dashboard</h3>
+
+<div class="row">
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(check)">Check In</button>
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(reg)">Register for Classes</button>
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(sche)">View Schedule</button>
+    </div>
+</div>
+@code{
+    string check = "/student/checkin";
+    string reg = "/student/register";
+    string sche = "/student/schedule";
+}

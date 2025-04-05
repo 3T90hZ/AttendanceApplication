@@ -1,0 +1,33 @@
+﻿// Shared/NavMenu.razor
+<div class="nav-item px-3">
+    <Authorized>
+        <AuthorizeView Roles="Admin">
+            <NavLink class="nav-link" href="/admin/dashboard">
+                Admin Dashboard
+            </NavLink>
+        </AuthorizeView>
+        <AuthorizeView Roles="Teacher">
+            <NavLink class="nav-link" href="/teacher/dashboard">
+                Teacher Dashboard
+            </NavLink>
+        </AuthorizeView>
+        <AuthorizeView Roles="Student">
+            <NavLink class="nav-link" href="/student/dashboard">
+                Student Dashboard
+            </NavLink>
+        </AuthorizeView>
+        <NavLink class="nav-link" href="/Identity/Account/Logout" @onclick="() => { NavigationManager.NavigateTo(logout); }">
+            Logout
+        </NavLink>
+    </Authorized>
+    <NotAuthorized>
+        <NavLink class="nav-link" href="/Identity/Account/Login">
+            Log in
+        </NavLink>
+    </NotAuthorized>
+</div>
+
+@code {
+    [Inject] public NavigationManager NavigationManager { get; set; }
+    string logout = "/Identity/Account/Logout";
+}

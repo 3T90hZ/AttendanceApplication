@@ -1,0 +1,49 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using AttendanceApplication.Data;
+@using Microsoft.AspNetCore.Identity;
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@page "/student/schedule"
+@attribute [Authorize(Roles = "Student")]
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Class Schedule</h3>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Class Name</th>
+            <th>Teacher</th>
+            <th>Date and Time</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if(sessions != null){
+            @foreach (var session in sessions)
+            {
+                <tr>
+                    <td>@session.Class.Name</td>
+                    <td>@session.Class.Teacher?.DisplayName</td>
+                    <td>@session.DateTime.ToString("g")</td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<ClassSession> sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var studentId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        sessions = await Context.ClassSessions
+            .Include(cs => cs.Class)
+            .ThenInclude(c => c.Teacher)
+            .Where(cs => cs.Class.Enrollments.Any(e => e.StudentId == studentId))
+            .ToListAsync();
+    }
+}

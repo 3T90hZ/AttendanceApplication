@@ -1,0 +1,72 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using AttendanceApplication.Data;
+@using Microsoft.AspNetCore.Identity;
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@page "/teacher/mattendance"
+@attribute [Authorize(Roles = "Teacher")]
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Manage Attendance</h3>
+
+@if (sessions == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    @foreach (var session in sessions)
+    {
+        <h4>@session.Class.Name - @session.DateTime.ToString("g")</h4>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if(session.Attendances != null){
+                    @foreach (var attendance in session.Attendances)
+                    {
+                        <tr>
+                            <td>@attendance.Student.DisplayName</td>
+                            <td>@attendance.Status</td>
+                            <td>
+                                <InputSelect @bind-Value="attendance.Status" @onchange="() => UpdateAttendance(attendance)">
+                                    <option value="@AttendanceStatus.Present">Present</option>
+                                    <option value="@AttendanceStatus.AbsentWithPermission">Absent (Permitted)</option>
+                                    <option value="@AttendanceStatus.AbsentWithoutPermission">Absent (Unpermitted)</option>
+                                </InputSelect>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private List<ClassSession> sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var teacherId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        sessions = await Context.ClassSessions
+            .Include(cs => cs.Class)
+            .Include(cs => cs.Attendances)
+            .ThenInclude(a => a.Student)
+            .Where(cs => cs.Class.TeacherId == teacherId)
+            .ToListAsync();
+    }
+
+    private async Task UpdateAttendance(Attendance attendance)
+    {
+        await Context.SaveChangesAsync();
+    }
+}

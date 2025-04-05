@@ -1,0 +1,70 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using AttendanceApplication.Data;
+@using Microsoft.AspNetCore.Identity;
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@page "/student/register"
+@attribute [Authorize(Roles = "Student")]
+@inject ApplicationDbContext Context
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Register for Classes</h3>
+
+@if (availableClasses == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Class Name</th>
+                <th>Teacher</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var cls in availableClasses)
+            {
+                <tr>
+                    <td>@cls.Name</td>
+                    <td>@cls.Teacher?.DisplayName</td>
+                    <td>
+                        <button class="btn btn-primary" @onclick="() => Registering(cls.Id)">Register</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Class> availableClasses;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var studentId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var enrolledClassIds = await Context.Enrollments
+            .Where(e => e.StudentId == studentId)
+            .Select(e => e.ClassId)
+            .ToListAsync();
+
+        availableClasses = await Context.Classes
+            .Include(c => c.Teacher)
+            .Where(c => !enrolledClassIds.Contains(c.Id))
+            .ToListAsync();
+    }
+
+    private async Task Registering(int classId)
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var studentId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var enrollment = new Enrollment { ClassId = classId, StudentId = studentId };
+        Context.Enrollments.Add(enrollment);
+        await Context.SaveChangesAsync();
+        availableClasses.RemoveAll(c => c.Id == classId);
+    }
+}

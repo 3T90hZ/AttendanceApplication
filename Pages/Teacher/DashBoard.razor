@@ -1,0 +1,19 @@
+﻿@page "/teacher/dashboard"
+@attribute [Authorize(Roles = "Teacher")]
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Teacher Dashboard</h3>
+
+<div class="row">
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(sche)">View Schedule</button>
+    </div>
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(att)">Manage Attendance</button>
+    </div>
+</div>
+@code{
+    string sche = "/teacher/schedule";
+    string att = "/teacher/mattendance";
+}

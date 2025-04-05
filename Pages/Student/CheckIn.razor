@@ -1,0 +1,47 @@
+﻿@using AttendanceApplication.Services
+@page "/student/checkin"
+@attribute [Authorize(Roles = "Student")]
+@inject CheckInService CheckInService
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<h3>Check In to Class</h3>
+
+<EditForm Model="checkInModel" OnValidSubmit="HandleCheckIn">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="form-group">
+        <label>Check-In Code</label>
+        <InputText class="form-control" @bind-Value="checkInModel.Code" />
+    </div>
+    <button type="submit" class="btn btn-primary">Check In</button>
+</EditForm>
+
+<p>@message</p>
+
+@code {
+    private CheckInModel checkInModel = new();
+    private string message = "";
+
+    private async Task HandleCheckIn()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var studentId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (studentId == null)
+        {
+            message = "Unable to identify the current user.";
+            return;
+        }
+
+        var (success, msg) = await CheckInService.CheckInAsync(checkInModel.Code, studentId);
+        message = msg;
+    }
+
+    public class CheckInModel
+    {
+        public string Code { get; set; }
+    }
+}

@@ -1,0 +1,57 @@
+﻿@using AttendanceApplication.Services;
+@using AttendanceApplication.Models;
+@using Microsoft.AspNetCore.Identity;
+@page "/admin/edituser/{UserId}"
+@attribute [Authorize(Roles = "Admin")]
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<h3>Edit User</h3>
+
+<EditForm Model="userModel" OnValidSubmit="HandleEdit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="form-group">
+        <label>Display Name</label>
+        <InputText class="form-control" @bind-Value="userModel.DisplayName" />
+    </div>
+    <div class="form-group">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="userModel.Email" />
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+</EditForm>
+
+@code {
+    [Parameter] public string UserId { get; set; }
+    private UserEditModel userModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user != null)
+        {
+            userModel.DisplayName = user.DisplayName;
+            userModel.Email = user.Email;
+        }
+    }
+
+    private async Task HandleEdit()
+    {
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user != null)
+        {
+            user.DisplayName = userModel.DisplayName;
+            user.Email = userModel.Email;
+            await UserManager.UpdateAsync(user);
+            Navigation.NavigateTo("/admin/manageusers");
+        }
+    }
+
+    public class UserEditModel
+    {
+        public string DisplayName { get; set; }
+        public string Email { get; set; }
+    }
+}
