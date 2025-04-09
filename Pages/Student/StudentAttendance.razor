@@ -1,0 +1,153 @@
+﻿@using AttendanceApplication.Data;
+@page "/student/attendance"
+@attribute [Authorize(Roles = "Student")]
+@inject ApplicationDbContext Context
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@using AttendanceApplication.Models
+@using Microsoft.AspNetCore.Identity
+
+<h3>My Attendance</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+@if (attendanceRecords == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <h4>Absent Percentage: @absentPercentage.ToString("F2")%</h4>
+
+    @if (!attendanceRecords.Any())
+    {
+        <p>No attendance records found.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Class Name</th>
+                    <th>Date and Time</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var record in attendanceRecords)
+                {
+                    <tr>
+                        <td>@record.ClassName</td>
+                        <td>@record.DateTime.ToString("g")</td>
+                        <td class="@(record.Status == AttendanceStatus.Present ? "status-present" : "status-absent")">@record.Status</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private List<AttendanceRecord> attendanceRecords;
+    private double absentPercentage;
+    private string errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get the current student's ID
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                errorMessage = "User not authenticated.";
+                return;
+            }
+            var studentId = UserManager.GetUserId(user);
+            if (string.IsNullOrEmpty(studentId))
+            {
+                errorMessage = "User not found.";
+                return;
+            }
+
+            // Get the student's enrollments
+            var enrollments = await Context.Enrollments
+                .Where(e => e.StudentId == studentId)
+                .ToListAsync();
+
+            if (!enrollments.Any())
+            {
+                attendanceRecords = new List<AttendanceRecord>();
+                absentPercentage = 0;
+                return;
+            }
+
+            // Get the class IDs the student is enrolled in
+            var classIds = enrollments.Select(e => e.ClassId).ToList();
+
+            // Get all class sessions for the enrolled classes
+            var classSessions = await Context.ClassSessions
+                .Where(cs => classIds.Contains(cs.ClassId))
+                .ToListAsync();
+
+            // Get the student's attendance records
+            var attendances = await Context.Attendances
+                .Where(a => a.StudentId == studentId)
+                .ToListAsync();
+
+            // Get class names
+            var classes = await Context.Classes
+                .Where(c => classIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.Name);
+
+            // Build the attendance records
+            attendanceRecords = new List<AttendanceRecord>();
+            foreach (var session in classSessions)
+            {
+                var attendance = attendances.FirstOrDefault(a => a.ClassSessionId == session.Id);
+                if (attendance != null) // Only include sessions where attendance was recorded
+                {
+                    attendanceRecords.Add(new AttendanceRecord
+                        {
+                            ClassName = classes.ContainsKey(session.ClassId) ? classes[session.ClassId] : "Unknown",
+                            DateTime = session.DateTime,
+                            Status = attendance.Status
+                        });
+                }
+            }
+
+            // Calculate absent percentage
+            var totalSessions = attendanceRecords.Count;
+            if (totalSessions == 0)
+            {
+                absentPercentage = 0;
+            }
+            else
+            {
+                var absentSessions = attendanceRecords.Count(r => r.Status == AttendanceStatus.AbsentWithoutPermission || r.Status == AttendanceStatus.AbsentWithPermission);
+                absentPercentage = (double)absentSessions / totalSessions * 100;
+            }
+
+            // Sort records by date (newest first)
+            attendanceRecords = attendanceRecords.OrderByDescending(r => r.DateTime).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading attendance: {ex.Message}";
+            Console.WriteLine($"OnInitialized Exception: {ex}");
+        }
+    }
+
+    private class AttendanceRecord
+    {
+        public string ClassName { get; set; }
+        public DateTime DateTime { get; set; }
+        public AttendanceStatus Status { get; set; }
+    }
+}

@@ -8,8 +8,14 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject RoleManager<IdentityRole> RoleManager
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <h3>Manage Users</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
 
 @if (users == null)
 {
@@ -34,8 +40,16 @@ else
                     <td>@user.Email</td>
                     <td>@user.Role</td>
                     <td>
-                        <button class="btn btn-warning" @onclick="() => EditUser(user.Id)">Edit</button>
-                        <button class="btn btn-danger" @onclick="() => DeleteUser(user.Id)">Delete</button>
+                        @if (user.IsAdmin || user.Id == currentAdminId)
+                        {
+                            <button class="btn btn-warning" disabled title="Cannot edit admin accounts or your own account">Edit</button>
+                            <button class="btn btn-danger" disabled title="Cannot delete admin accounts or your own account">Delete</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-warning" @onclick="() => EditUser(user.Id)">Edit</button>
+                            <button class="btn btn-danger" @onclick="() => DeleteUser(user.Id)">Delete</button>
+                        }
                     </td>
                 </tr>
             }
@@ -45,21 +59,49 @@ else
 
 @code {
     private List<UserViewModel> users;
+    private string currentAdminId;
+    private string errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        var allUsers = await UserManager.Users.ToListAsync();
-        users = new List<UserViewModel>();
-        foreach (var user in allUsers)
+        try
         {
-            var roles = await UserManager.GetRolesAsync(user);
-            users.Add(new UserViewModel
-                {
-                    Id = user.Id,
-                    DisplayName = user.DisplayName,
-                    Email = user.Email,
-                    Role = roles.FirstOrDefault()
-                });
+            // Get the current admin's ID
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                errorMessage = "User not authenticated.";
+                return;
+            }
+            currentAdminId = UserManager.GetUserId(user);
+            if (string.IsNullOrEmpty(currentAdminId))
+            {
+                errorMessage = "Current admin user not found.";
+                return;
+            }
+
+            // Load all users
+            var allUsers = await UserManager.Users.ToListAsync();
+            users = new List<UserViewModel>();
+            foreach (var appUser in allUsers)
+            {
+                var roles = await UserManager.GetRolesAsync(appUser);
+                var role = roles.FirstOrDefault();
+                users.Add(new UserViewModel
+                    {
+                        Id = appUser.Id,
+                        DisplayName = appUser.DisplayName,
+                        Email = appUser.Email,
+                        Role = role,
+                        IsAdmin = role == "Admin"
+                    });
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading users: {ex.Message}";
+            Console.WriteLine($"OnInitialized Exception: {ex}");
         }
     }
 
@@ -70,11 +112,43 @@ else
 
     private async Task DeleteUser(string userId)
     {
-        var result = await UserService.DeleteUserAsync(userId);
-        if (result)
+        try
         {
-            users.RemoveAll(u => u.Id == userId);
-            StateHasChanged();
+            // Check if the user is an admin
+            var user = users.FirstOrDefault(u => u.Id == userId);
+            if (user == null)
+            {
+                errorMessage = "User not found.";
+                return;
+            }
+
+            if (user.IsAdmin)
+            {
+                errorMessage = "Cannot delete admin accounts.";
+                return;
+            }
+
+            if (user.Id == currentAdminId)
+            {
+                errorMessage = "You cannot delete your own account.";
+                return;
+            }
+
+            var result = await UserService.DeleteUserAsync(userId);
+            if (result)
+            {
+                users.RemoveAll(u => u.Id == userId);
+                StateHasChanged();
+            }
+            else
+            {
+                errorMessage = "Failed to delete user.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error deleting user: {ex.Message}";
+            Console.WriteLine($"DeleteUser Exception: {ex}");
         }
     }
 
@@ -84,5 +158,6 @@ else
         public string DisplayName { get; set; }
         public string Email { get; set; }
         public string Role { get; set; }
+        public bool IsAdmin { get; set; }
     }
 }

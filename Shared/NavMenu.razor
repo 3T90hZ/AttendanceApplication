@@ -1,6 +1,6 @@
-﻿// Shared/NavMenu.razor
-<div class="nav-item px-3">
-    <Authorized>
+﻿<div class="nav-item px-3">
+    <AuthorizeView Context="authContext">
+        <Authorized Context="authorizedContext">
         <AuthorizeView Roles="Admin">
             <NavLink class="nav-link" href="/admin/dashboard">
                 Admin Dashboard
@@ -25,6 +25,7 @@
             Log in
         </NavLink>
     </NotAuthorized>
+    </AuthorizeView>
 </div>
 
 @code {

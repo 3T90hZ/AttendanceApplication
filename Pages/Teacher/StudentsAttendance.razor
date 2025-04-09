@@ -1,0 +1,295 @@
+﻿@using AttendanceApplication.Data
+@page "/teacher/students-attendance"
+@attribute [Authorize(Roles = "Teacher")]
+@inject ApplicationDbContext Context
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@using AttendanceApplication.Models
+@using Microsoft.AspNetCore.Identity
+
+<h3>Students Attendance</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+@if (studentAttendanceSummaries == null)
+{
+    <p>Loading...</p>
+}
+else if (!studentAttendanceSummaries.Any())
+{
+    <p>No students or attendance records found for your classes.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Absent Percentage</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var summary in studentAttendanceSummaries)
+            {
+                <tr>
+                    <td>@summary.StudentName</td>
+                    <td>@summary.AbsentPercentage.ToString("F2")%</td>
+                    <td>
+                        <button class="btn btn-info btn-sm" @onclick="() => ShowAbsentSessions(summary.StudentId)">View Absent Sessions</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<!-- Modal for Absent Sessions -->
+@if (showModal && selectedStudentAbsentSessions != null)
+{
+    <div class="modal" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Absent Sessions for @selectedStudentName</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!selectedStudentAbsentSessions.Any())
+                    {
+                        <p>No absent sessions found for this student.</p>
+                    }
+                    else
+                    {
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Class Name</th>
+                                    <th>Date and Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var session in selectedStudentAbsentSessions)
+                                {
+                                    <tr>
+                                        <td>@session.ClassName</td>
+                                        <td>@session.DateTime.ToString("g")</td>
+                                        <td class="status-absent">@session.Status</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<StudentAttendanceSummary> studentAttendanceSummaries;
+    private List<AbsentSession> selectedStudentAbsentSessions;
+    private string selectedStudentName;
+    private bool showModal;
+    private string errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get the current teacher's ID
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                errorMessage = "User not authenticated.";
+                return;
+            }
+            var teacherId = UserManager.GetUserId(user);
+            if (string.IsNullOrEmpty(teacherId))
+            {
+                errorMessage = "User not found.";
+                return;
+            }
+
+            // Get the teacher's classes
+            var teacherClasses = await Context.Classes
+                .Where(c => c.TeacherId == teacherId)
+                .ToListAsync();
+
+            if (!teacherClasses.Any())
+            {
+                studentAttendanceSummaries = new List<StudentAttendanceSummary>();
+                return;
+            }
+
+            var classIds = teacherClasses.Select(c => c.Id).ToList();
+
+            // Get all enrollments for the teacher's classes
+            var enrollments = await Context.Enrollments
+                .Where(e => classIds.Contains(e.ClassId))
+                .ToListAsync();
+
+            if (!enrollments.Any())
+            {
+                studentAttendanceSummaries = new List<StudentAttendanceSummary>();
+                return;
+            }
+
+            // Get all students enrolled in the teacher's classes
+            var studentIds = enrollments.Select(e => e.StudentId).Distinct().ToList();
+            var students = await Context.Users
+                .Where(u => studentIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u);
+
+            // Get all class sessions for the teacher's classes
+            var classSessions = await Context.ClassSessions
+                .Where(cs => classIds.Contains(cs.ClassId))
+                .ToListAsync();
+
+            // Get all attendance records for the students in these sessions
+            var attendances = await Context.Attendances
+                .Where(a => studentIds.Contains(a.StudentId))
+                .ToListAsync();
+
+            // Get class names
+            var classNames = teacherClasses.ToDictionary(c => c.Id, c => c.Name);
+
+            // Build the student attendance summaries
+            studentAttendanceSummaries = new List<StudentAttendanceSummary>();
+            foreach (var studentId in studentIds)
+            {
+                var studentEnrollments = enrollments.Where(e => e.StudentId == studentId).ToList();
+                var studentClassIds = studentEnrollments.Select(e => e.ClassId).ToList();
+                var studentSessions = classSessions.Where(cs => studentClassIds.Contains(cs.ClassId)).ToList();
+                var studentAttendances = attendances.Where(a => a.StudentId == studentId).ToList();
+
+                var totalSessions = studentSessions.Count;
+                if (totalSessions == 0)
+                {
+                    continue; // Skip students with no sessions
+                }
+
+                var absentSessions = studentAttendances
+                    .Count(a => a.StudentId == studentId &&
+                                (a.Status == AttendanceStatus.AbsentWithoutPermission || a.Status == AttendanceStatus.AbsentWithPermission));
+
+                var absentPercentage = totalSessions > 0 ? (double)absentSessions / totalSessions * 100 : 0;
+
+                studentAttendanceSummaries.Add(new StudentAttendanceSummary
+                    {
+                        StudentId = studentId,
+                        StudentName = students.ContainsKey(studentId) ? students[studentId].DisplayName ?? students[studentId].UserName : "Unknown",
+                        AbsentPercentage = absentPercentage,
+                        TotalSessions = totalSessions,
+                        AbsentSessions = absentSessions
+                    });
+            }
+
+            // Sort by absent percentage (highest first)
+            studentAttendanceSummaries = studentAttendanceSummaries.OrderByDescending(s => s.AbsentPercentage).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading students' attendance: {ex.Message}";
+            Console.WriteLine($"OnInitialized Exception: {ex}");
+        }
+    }
+
+    private async Task ShowAbsentSessions(string studentId)
+    {
+        try
+        {
+            // Get the student's name
+            var student = await Context.Users.FindAsync(studentId);
+            selectedStudentName = student?.DisplayName ?? student?.UserName ?? "Unknown";
+
+            // Get the teacher's classes
+            var teacherId = UserManager.GetUserId((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User);
+            var teacherClasses = await Context.Classes
+                .Where(c => c.TeacherId == teacherId)
+                .ToListAsync();
+
+            var classIds = teacherClasses.Select(c => c.Id).ToList();
+
+            // Get the student's enrollments
+            var studentEnrollments = await Context.Enrollments
+                .Where(e => e.StudentId == studentId && classIds.Contains(e.ClassId))
+                .ToListAsync();
+
+            var studentClassIds = studentEnrollments.Select(e => e.ClassId).ToList();
+
+            // Get the class sessions for the student's classes
+            var classSessions = await Context.ClassSessions
+                .Where(cs => studentClassIds.Contains(cs.ClassId))
+                .ToListAsync();
+
+            // Get the student's attendance records
+            var attendances = await Context.Attendances
+                .Where(a => a.StudentId == studentId)
+                .ToListAsync();
+
+            // Get class names
+            var classNames = teacherClasses.ToDictionary(c => c.Id, c => c.Name);
+
+            // Build the list of absent sessions
+            selectedStudentAbsentSessions = new List<AbsentSession>();
+            foreach (var session in classSessions)
+            {
+                var attendance = attendances.FirstOrDefault(a => a.ClassSessionId == session.Id);
+                if (attendance != null &&
+                    (attendance.Status == AttendanceStatus.AbsentWithoutPermission || attendance.Status == AttendanceStatus.AbsentWithPermission))
+                {
+                    selectedStudentAbsentSessions.Add(new AbsentSession
+                        {
+                            ClassName = classNames.ContainsKey(session.ClassId) ? classNames[session.ClassId] : "Unknown",
+                            DateTime = session.DateTime,
+                            Status = attendance.Status
+                        });
+                }
+            }
+
+            // Sort by date (newest first)
+            selectedStudentAbsentSessions = selectedStudentAbsentSessions.OrderByDescending(s => s.DateTime).ToList();
+
+            showModal = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading absent sessions: {ex.Message}";
+            Console.WriteLine($"ShowAbsentSessions Exception: {ex}");
+        }
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        selectedStudentAbsentSessions = null;
+        selectedStudentName = null;
+    }
+
+    private class StudentAttendanceSummary
+    {
+        public string StudentId { get; set; }
+        public string StudentName { get; set; }
+        public double AbsentPercentage { get; set; }
+        public int TotalSessions { get; set; }
+        public int AbsentSessions { get; set; }
+    }
+
+    private class AbsentSession
+    {
+        public string ClassName { get; set; }
+        public DateTime DateTime { get; set; }
+        public AttendanceStatus Status { get; set; }
+    }
+}

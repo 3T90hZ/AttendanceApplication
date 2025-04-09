@@ -11,9 +11,13 @@
     </div>
     <div class="col-md-3">
         <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(att)">Manage Attendance</button>
+    </div>    
+    <div class="col-md-3">
+        <button class="btn btn-primary" @onclick="() => Navigation.NavigateTo(stud)">Students</button>
     </div>
 </div>
 @code{
     string sche = "/teacher/schedule";
     string att = "/teacher/mattendance";
+    string stud = "/teacher/students-attendance";
 }
